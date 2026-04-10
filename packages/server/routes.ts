@@ -16,4 +16,9 @@ export function configureRoutes(app: Express, openApiKey?: string): void {
   });
 
   app.get('/api/products/:id/reviews', reviewController.getReviews);
+
+  app.get(
+    '/api/products/:id/reviews/summarize',
+    reviewController.summarizeReviews
+  );
 }

@@ -20,5 +20,9 @@
   },
   "workspaces": [
     "packages/*"
-  ]
+  ],
+  "dependencies": {
+    "dayjs": "^1.11.20",
+    "openai": "^6.34.0"
+  }
 }
