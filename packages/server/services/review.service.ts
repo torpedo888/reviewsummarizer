@@ -35,6 +35,14 @@ export const reviewService = {
   },
 
   async summarizeReviews(productId: number): Promise<string> {
+    await reviewRepository.getReviewSummary(productId).then((summary) => {
+      if (summary && summary.expiresAt > new Date()) {
+        console.log('Using cached summary');
+        return `Summary of reviews for product ${productId}: ${summary.content}`;
+      }
+    });
+
+    console.log('no cached summary. turning to OpenAI for summary');
     const reviews = await reviewRepository.getReviewsByProductId(productId);
     const joinedreviews = reviews.map((review) => review.content).join('');
 

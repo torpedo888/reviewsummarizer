@@ -28,4 +28,13 @@ export const reviewRepository = {
       update: data,
     });
   },
+
+  getReviewSummary(
+    productId: number
+  ): Promise<{ content: string; expiresAt: Date } | null> {
+    const prisma = getPrisma();
+    return prisma.summary.findUnique({
+      where: { productId },
+    });
+  },
 };
