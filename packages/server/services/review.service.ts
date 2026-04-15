@@ -35,12 +35,11 @@ export const reviewService = {
   },
 
   async summarizeReviews(productId: number): Promise<string> {
-    await reviewRepository.getReviewSummary(productId).then((summary) => {
-      if (summary && summary.expiresAt > new Date()) {
-        console.log('Using cached summary');
-        return `Summary of reviews for product ${productId}: ${summary.content}`;
-      }
-    });
+    const existingSummary = await reviewRepository.getReviewSummary(productId);
+    if (existingSummary) {
+      console.log('Using cached summary');
+      return `Summary of reviews for product ${productId}: ${existingSummary.content}`;
+    }
 
     console.log('no cached summary. turning to OpenAI for summary');
     const reviews = await reviewRepository.getReviewsByProductId(productId);
