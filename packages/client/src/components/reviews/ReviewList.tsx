@@ -25,21 +25,41 @@ const ReviewList = ({ productId }: Props) => {
 
   const [isLoading, setIsLoading] = useState(true);
 
+  const [isError, setIsError] = useState(false);
+
   useEffect(() => {
     setIsLoading(true);
+
+    // method fetching review data from the backend
     const fetchReviews = async () => {
       const response = await axios.get<GetReviewsResponse>(
         `/api/products/${productId}/reviews/summarize`
       );
-
       console.log('Fetched review data:', response.data);
 
       setReviewData(response.data);
-      setIsLoading(false);
     };
 
-    fetchReviews();
+    try {
+      setIsLoading(true);
+      fetchReviews();
+      setIsLoading(false);
+    } catch (error) {
+      console.error('Error fetching review data:', error);
+      setIsError(true);
+      return;
+    } finally {
+      setIsLoading(false);
+    }
   }, [productId]);
+
+  if (isError) {
+    return (
+      <div className="text-red-500">
+        Error loading reviews. Please try again later.
+      </div>
+    );
+  }
 
   if (isLoading) {
     return (
