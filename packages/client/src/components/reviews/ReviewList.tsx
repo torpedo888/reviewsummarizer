@@ -2,6 +2,7 @@ import axios from 'axios';
 import { useEffect, useState } from 'react';
 import Skeleton from 'react-loading-skeleton';
 import StarRating from './StarRating';
+import { useQuery } from '@tanstack/react-query';
 
 type Props = {
   productId: number;
@@ -21,42 +22,36 @@ type GetReviewsResponse = {
 };
 
 const ReviewList = ({ productId }: Props) => {
-  const [reviewData, setReviewData] = useState<GetReviewsResponse>();
+  const {
+    data: reviewData,
+    isLoading,
+    error,
+  } = useQuery<GetReviewsResponse>({
+    queryKey: ['reviews', productId],
+    queryFn: async () => fetchReviews(),
+  });
 
-  const [isLoading, setIsLoading] = useState(true);
+  // const [reviewData, setReviewData] = useState<GetReviewsResponse>();
+  // const [isLoading, setIsLoading] = useState(true);
+  // const [isError, setIsError] = useState(false);
 
-  const [isError, setIsError] = useState(false);
+  // method fetching review data from the backend
+  const fetchReviews = async () => {
+    const response = await axios.get<GetReviewsResponse>(
+      `/api/products/${productId}/reviews/summarize`
+    );
+    return response.data;
+  };
 
-  useEffect(() => {
-    setIsLoading(true);
+  // useEffect(() => {
+  //   setIsLoading(true);
+  //   fetchReviews();
+  // }, [productId]);
 
-    // method fetching review data from the backend
-    const fetchReviews = async () => {
-      const response = await axios.get<GetReviewsResponse>(
-        `/api/products/${productId}/reviews/summarize`
-      );
-      console.log('Fetched review data:', response.data);
-
-      setReviewData(response.data);
-    };
-
-    try {
-      setIsLoading(true);
-      fetchReviews();
-      setIsLoading(false);
-    } catch (error) {
-      console.error('Error fetching review data:', error);
-      setIsError(true);
-      return;
-    } finally {
-      setIsLoading(false);
-    }
-  }, [productId]);
-
-  if (isError) {
+  if (error) {
     return (
       <div className="text-red-500">
-        Error loading reviews. Please try again later.
+        {error.message || 'Error loading reviews. Please try again later.'}
       </div>
     );
   }

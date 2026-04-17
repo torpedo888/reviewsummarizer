@@ -22,6 +22,7 @@
     "packages/*"
   ],
   "dependencies": {
+    "@tanstack/react-query": "^5.99.0",
     "dayjs": "^1.11.20",
     "openai": "^6.34.0"
   }
