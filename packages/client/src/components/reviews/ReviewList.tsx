@@ -1,35 +1,16 @@
-import axios from 'axios';
 import { useEffect, useState } from 'react';
 import Skeleton from 'react-loading-skeleton';
 import StarRating from './StarRating';
 import { HiSparkles } from 'react-icons/hi2';
 import { Button } from '../ui/button';
 import { useMutation } from '@tanstack/react-query';
-import type { disabled } from 'node_modules/@base-ui/react/esm/utils/reason-parts';
-
-type Props = {
-  productId: number;
-};
-
-type Review = {
-  id: number;
-  author: string;
-  content: string;
-  rating: number;
-  createdAt: string;
-};
-
-type SummaryApiResponse = {
-  summary: string | null;
-};
+import type { Props, Review, SummaryApiResponse } from './reviewsApi';
+import reviewsApi from './reviewsApi';
 
 const ReviewList = ({ productId }: Props) => {
   const [reviewData, setReviewData] = useState<Review[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isError, setIsError] = useState(false);
-  // const [summaryData, setSummaryData] = useState<SummaryApiResponse | null>(
-  //   null
-  // );
 
   const {
     mutate: handleSummarize,
@@ -37,41 +18,28 @@ const ReviewList = ({ productId }: Props) => {
     error: summaryError,
     data: summaryData,
   } = useMutation<SummaryApiResponse, Error>({
-    mutationFn: summarizeReviews,
+    mutationFn: () => reviewsApi.summarizeReviews(productId),
   });
-
-  // method fetching review data from the backend
-  const fetchReviews = async () => {
-    try {
-      console.log(`Fetching reviews for product ID: ${productId}`);
-      const response = await axios.get<Review[]>(
-        `/api/products/${productId}/reviews`
-      );
-
-      console.log('response status', response.status);
-      console.log('response data', response.data);
-
-      setReviewData(response.data);
-    } catch (error) {
-      console.error('Error fetching review data:', error);
-      setIsError(true);
-      return;
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  async function summarizeReviews() {
-    const { data } = await axios.get<{ summary: SummaryApiResponse }>(
-      `/api/products/${productId}/reviews/summarizex`
-    );
-    return data.summary;
-  }
 
   useEffect(() => {
     console.log(`useEffect triggered for product ID: ${productId}`);
     setIsLoading(true);
-    fetchReviews();
+
+    const loadReviews = async () => {
+      try {
+        const data = await reviewsApi.fetchReviews(productId);
+        console.log('Fetched reviews:', data);
+        setReviewData(data);
+        setIsError(false);
+      } catch (error) {
+        console.error('Error fetching reviews:', error);
+        setIsError(true);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    loadReviews();
   }, [productId]);
 
   if (isError) {
