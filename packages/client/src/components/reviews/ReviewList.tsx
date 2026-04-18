@@ -29,6 +29,7 @@ const ReviewList = ({ productId }: Props) => {
     null
   );
   const [isSummarizing, setIsSummarizing] = useState(false);
+  const [summaryError, setSummaryError] = useState('');
 
   // method fetching review data from the backend
   const fetchReviews = async () => {
@@ -65,7 +66,7 @@ const ReviewList = ({ productId }: Props) => {
       setSummaryData(response.data.summary);
     } catch (error) {
       console.error('Error fetching summary:', error);
-      setIsError(true);
+      setSummaryError('Could not summarize the reviews.');
     } finally {
       setIsSummarizing(false);
     }
@@ -115,6 +116,7 @@ const ReviewList = ({ productId }: Props) => {
             <HiSparkles className="mr-2" /> Summarize
           </Button>
         )}
+        {summaryError && <p className="text-red-500">{summaryError}</p>}
       </div>
       <div className="flex flex-col gap-5">
         {reviewData.map((review) => (
