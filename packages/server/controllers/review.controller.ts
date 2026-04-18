@@ -47,12 +47,11 @@ const reviewController = {
       //   return res.json({ summary: 'No reviews available for this product.' });
       // }
 
-      const reviews1 = await reviewService.getReviewsByProductId(productId);
+      // const reviews1 = await reviewService.getReviewsByProductId(productId);
       const summary = await reviewService.summarizeReviews(productId);
 
       res.json({
-        summary,
-        reviews: reviews1,
+        summary: { summary },
       });
     } catch (error) {
       res.status(500).json({ error: 'Failed to summarize reviews' });
