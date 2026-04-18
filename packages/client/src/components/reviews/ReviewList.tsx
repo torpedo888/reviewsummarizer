@@ -4,6 +4,8 @@ import Skeleton from 'react-loading-skeleton';
 import StarRating from './StarRating';
 import { HiSparkles } from 'react-icons/hi2';
 import { Button } from '../ui/button';
+import { useMutation } from '@tanstack/react-query';
+import type { disabled } from 'node_modules/@base-ui/react/esm/utils/reason-parts';
 
 type Props = {
   productId: number;
@@ -25,11 +27,18 @@ const ReviewList = ({ productId }: Props) => {
   const [reviewData, setReviewData] = useState<Review[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isError, setIsError] = useState(false);
-  const [summaryData, setSummaryData] = useState<SummaryApiResponse | null>(
-    null
-  );
-  const [isSummarizing, setIsSummarizing] = useState(false);
-  const [summaryError, setSummaryError] = useState('');
+  // const [summaryData, setSummaryData] = useState<SummaryApiResponse | null>(
+  //   null
+  // );
+
+  const {
+    mutate: handleSummarize,
+    isPending: isSummarLoading,
+    error: summaryError,
+    data: summaryData,
+  } = useMutation<SummaryApiResponse, Error>({
+    mutationFn: summarizeReviews,
+  });
 
   // method fetching review data from the backend
   const fetchReviews = async () => {
@@ -52,25 +61,12 @@ const ReviewList = ({ productId }: Props) => {
     }
   };
 
-  const fetchSummary = async () => {
-    try {
-      setIsSummarizing(true);
-      console.log(`Fetching summary for product ID: ${productId}`);
-      const response = await axios.get<{ summary: SummaryApiResponse }>(
-        `/api/products/${productId}/reviews/summarize`
-      );
-
-      console.log('response status', response.status);
-      console.log('response data', response.data);
-
-      setSummaryData(response.data.summary);
-    } catch (error) {
-      console.error('Error fetching summary:', error);
-      setSummaryError('Could not summarize the reviews.');
-    } finally {
-      setIsSummarizing(false);
-    }
-  };
+  async function summarizeReviews() {
+    const { data } = await axios.get<{ summary: SummaryApiResponse }>(
+      `/api/products/${productId}/reviews/summarizex`
+    );
+    return data.summary;
+  }
 
   useEffect(() => {
     console.log(`useEffect triggered for product ID: ${productId}`);
@@ -102,7 +98,7 @@ const ReviewList = ({ productId }: Props) => {
 
   return (
     <div>
-      {isSummarizing ? (
+      {isSummarLoading ? (
         <Skeleton width={100} height={20} className="mb-2" />
       ) : null}
       <div className="mb-5">
@@ -111,12 +107,13 @@ const ReviewList = ({ productId }: Props) => {
         ) : (
           <Button
             className="rounded-full bg-black px-4 py-2 text-white shadow-sm hover:bg-neutral-800"
-            onClick={fetchSummary}
+            onClick={() => handleSummarize()}
+            disabled={isSummarLoading}
           >
             <HiSparkles className="mr-2" /> Summarize
           </Button>
         )}
-        {summaryError && <p className="text-red-500">{summaryError}</p>}
+        {summaryError && <p className="text-red-500">{summaryError.message}</p>}
       </div>
       <div className="flex flex-col gap-5">
         {reviewData.map((review) => (
