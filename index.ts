@@ -4,8 +4,8 @@ concurrently(
   [
     {
       name: 'server',
-      command: 'bun dev',
-      cwd: 'packages/server',
+      command: 'dotnet watch run --urls http://localhost:3000',
+      cwd: 'packages/server-dotnet',
       prefixColor: 'cyan',
     },
     {
