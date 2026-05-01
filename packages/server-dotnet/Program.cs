@@ -10,14 +10,27 @@ builder.Services.AddHttpClient();
 builder.Services.AddDbContext<ReviewSummarizerDbContext>(options =>
     options.UseNpgsql(builder.Configuration.GetConnectionString("DefaultConnection")));
 
+var configuredOrigins =
+    builder.Configuration["Cors:AllowedOrigins"]
+    ?? builder.Configuration["CORS_ALLOWED_ORIGINS"]
+    ?? "http://localhost:5173";
+var allowedOrigins = configuredOrigins
+    .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
 builder.Services.AddCors(options =>
 {
     options.AddDefaultPolicy(policy =>
     {
-        policy
-            .AllowAnyHeader()
-            .AllowAnyMethod()
-            .WithOrigins("http://localhost:5173");
+        policy.AllowAnyHeader().AllowAnyMethod();
+
+        if (allowedOrigins.Length > 0)
+        {
+            policy.WithOrigins(allowedOrigins);
+        }
+        else
+        {
+            policy.AllowAnyOrigin();
+        }
     });
 });
 
@@ -33,10 +46,7 @@ using (var scope = app.Services.CreateScope())
 
 app.MapGet("/", () =>
 {
-    var openApiKey = app.Configuration["OpenAI:ApiKey"];
-    return !string.IsNullOrWhiteSpace(openApiKey)
-        ? Results.Text($"Your Open API Key is: {openApiKey}")
-        : Results.Text("No Open API Key found in configuration.");
+    return Results.Ok(new { status = "ok" });
 });
 
 app.MapGet("/api/hello", () => Results.Json(new { message = "Hello from the .NET Minimal API server" }));

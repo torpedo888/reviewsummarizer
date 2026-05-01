@@ -4,9 +4,10 @@ ASP.NET Core 8 Minimal API backend replacing the previous Express implementation
 
 ## Environment variables
 
-- `DATABASE_URL`: MySQL connection string (same value the Prisma backend used)
-- `OPEN_API_KEY`: optional; if missing, summary endpoint uses a mock summary
-- `OPENAI_MODEL`: optional; defaults to `gpt-4.1-mini`
+- `ConnectionStrings__DefaultConnection`: PostgreSQL connection string
+- `OpenAI__ApiKey`: optional; if missing, summary endpoint uses a mock summary
+- `OpenAI__Model`: optional; defaults to `gpt-4o-mini`
+- `CORS_ALLOWED_ORIGINS`: comma-separated origins (for example: `https://your-frontend.up.railway.app`)
 
 ## Run
 
