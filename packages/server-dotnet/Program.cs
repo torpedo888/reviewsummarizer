@@ -1,19 +1,14 @@
-using System.Data;
 using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
-using Dapper;
-using MySqlConnector;
+using Microsoft.AspNetCore.Http.HttpResults;
+using Microsoft.EntityFrameworkCore;
 
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddHttpClient();
-builder.Services.AddSingleton<IDbConnectionFactory>(serviceProvider =>
-{
-    var configuration = serviceProvider.GetRequiredService<IConfiguration>();
-    var connectionString = configuration.GetConnectionString("DefaultConnection");
-    return new MySqlConnectionFactory(connectionString);
-});
+builder.Services.AddDbContext<ReviewSummarizerDbContext>(options =>
+    options.UseNpgsql(builder.Configuration.GetConnectionString("DefaultConnection")));
 
 builder.Services.AddCors(options =>
 {
@@ -29,68 +24,68 @@ builder.Services.AddCors(options =>
 var app = builder.Build();
 app.UseCors();
 
+// Seed database on startup
+using (var scope = app.Services.CreateScope())
+{
+    var db = scope.ServiceProvider.GetRequiredService<ReviewSummarizerDbContext>();
+    await SeedData.InitializeAsync(db);
+}
+
 app.MapGet("/", () =>
 {
     var openApiKey = app.Configuration["OpenAI:ApiKey"];
     return !string.IsNullOrWhiteSpace(openApiKey)
         ? Results.Text($"Your Open API Key is: {openApiKey}")
-    : Results.Text("No Open API Key found in configuration.");
+        : Results.Text("No Open API Key found in configuration.");
 });
 
 app.MapGet("/api/hello", () => Results.Json(new { message = "Hello from the .NET Minimal API server" }));
 
-app.MapGet("/api/products/{id:int}/reviews", async (int id, IDbConnectionFactory factory) =>
+app.MapGet("/api/products/{id:int}/reviews", async (int id, ReviewSummarizerDbContext db) =>
 {
-    await using var connection = await factory.CreateOpenConnectionAsync();
-
-    var productExists = await connection.ExecuteScalarAsync<int>(
-        "SELECT COUNT(1) FROM products WHERE id = @id",
-        new { id });
-
-    if (productExists == 0)
-    {
+    var productExists = await db.Products.AnyAsync(p => p.Id == id);
+    if (!productExists)
         return Results.NotFound(new { error = "Product not found" });
-    }
 
-    var reviews = await connection.QueryAsync<ReviewDto>(
-        @"SELECT
-			id AS Id,
-			author AS Author,
-			COALESCE(content, '') AS Content,
-            CAST(rating AS SIGNED) AS Rating,
-			createdAt AS CreatedAt
-		  FROM reviews
-		  WHERE productId = @id
-		  ORDER BY createdAt DESC",
-        new { id });
+    var reviews = await db.Reviews
+        .Where(r => r.ProductId == id)
+        .OrderByDescending(r => r.CreatedAt)
+        .Select(r => new ReviewDto
+        {
+            Id = r.Id,
+            Author = r.Author,
+            Content = r.Content ?? string.Empty,
+            Rating = r.Rating,
+            CreatedAt = r.CreatedAt,
+        })
+        .ToListAsync();
 
     return Results.Ok(reviews);
 });
 
+app.MapGet("/api/products", async (
+    ReviewSummarizerDbContext db
+    ) =>
+{
+    var products = await db.Products.ToListAsync();
+
+    return Results.Ok(products);
+});
+
 app.MapGet("/api/products/{id:int}/reviews/summarize", async (
     int id,
-    IDbConnectionFactory factory,
+    ReviewSummarizerDbContext db,
     IHttpClientFactory httpClientFactory,
     ILoggerFactory loggerFactory) =>
 {
     var logger = loggerFactory.CreateLogger("SummaryEndpoint");
-    await using var connection = await factory.CreateOpenConnectionAsync();
 
-    var productExists = await connection.ExecuteScalarAsync<int>(
-        "SELECT COUNT(1) FROM products WHERE id = @id",
-        new { id });
-
-    if (productExists == 0)
-    {
+    var productExists = await db.Products.AnyAsync(p => p.Id == id);
+    if (!productExists)
         return Results.NotFound(new { error = "Product not found" });
-    }
 
-    var cachedSummary = await connection.QueryFirstOrDefaultAsync<SummaryRow>(
-        @"SELECT content AS Content, expiresAt AS ExpiresAt
-		  FROM summaries
-		  WHERE productId = @id AND expiresAt > UTC_TIMESTAMP()
-		  LIMIT 1",
-        new { id });
+    var cachedSummary = await db.Summaries
+        .FirstOrDefaultAsync(s => s.ProductId == id && s.ExpiresAt > DateTime.UtcNow);
 
     if (cachedSummary is not null)
     {
@@ -98,19 +93,16 @@ app.MapGet("/api/products/{id:int}/reviews/summarize", async (
         return Results.Ok(new { summary = new { summary = cached } });
     }
 
-    var reviews = await connection.QueryAsync<string>(
-        @"SELECT COALESCE(content, '')
-		  FROM reviews
-		  WHERE productId = @id
-		  ORDER BY createdAt DESC",
-        new { id });
+    var reviewContents = await db.Reviews
+        .Where(r => r.ProductId == id)
+        .OrderByDescending(r => r.CreatedAt)
+        .Select(r => r.Content ?? string.Empty)
+        .ToListAsync();
 
-    var joinedReviews = string.Join(" ", reviews).Trim();
+    var joinedReviews = string.Join(" ", reviewContents).Trim();
 
     if (string.IsNullOrWhiteSpace(joinedReviews))
-    {
         return Results.Ok(new { summary = new { summary = "No reviews available for this product." } });
-    }
 
     var prompt =
         "Summarize the following reviews into a short paragraph highlighting key positive and negative points:\n" +
@@ -119,14 +111,25 @@ app.MapGet("/api/products/{id:int}/reviews/summarize", async (
     var summaryText = await GetSummaryAsync(prompt, httpClientFactory, logger, app.Configuration);
     var fullSummary = $"Summary of reviews for product {id}: {summaryText}";
 
-    await connection.ExecuteAsync(
-        @"INSERT INTO summaries (productId, content, generatedAt, expiresAt)
-		  VALUES (@id, @content, UTC_TIMESTAMP(), DATE_ADD(UTC_TIMESTAMP(), INTERVAL 7 DAY))
-		  ON DUPLICATE KEY UPDATE
-			content = VALUES(content),
-			generatedAt = VALUES(generatedAt),
-			expiresAt = VALUES(expiresAt)",
-        new { id, content = summaryText });
+    var now = DateTime.UtcNow;
+    var existing = await db.Summaries.FirstOrDefaultAsync(s => s.ProductId == id);
+    if (existing is null)
+    {
+        db.Summaries.Add(new Summary
+        {
+            ProductId = id,
+            Content = summaryText,
+            GeneratedAt = now,
+            ExpiresAt = now.AddDays(7),
+        });
+    }
+    else
+    {
+        existing.Content = summaryText;
+        existing.GeneratedAt = now;
+        existing.ExpiresAt = now.AddDays(7);
+    }
+    await db.SaveChangesAsync();
 
     return Results.Ok(new { summary = new { summary = fullSummary } });
 });
@@ -181,69 +184,79 @@ static async Task<string> GetSummaryAsync(
     throw new InvalidOperationException("OpenAI did not return output_text.");
 }
 
-public interface IDbConnectionFactory
+// ── Entity models ─────────────────────────────────────────────────────────────
+
+public class Product
 {
-    Task<MySqlConnection> CreateOpenConnectionAsync();
+    public int Id { get; set; }
+    public string Name { get; set; } = string.Empty;
+    public string? Description { get; set; }
+    public double Price { get; set; }
+    public ICollection<Review> Reviews { get; set; } = [];
+    public Summary? Summary { get; set; }
 }
 
-public sealed class MySqlConnectionFactory(string? connectionString) : IDbConnectionFactory
+public class Review
 {
-    public async Task<MySqlConnection> CreateOpenConnectionAsync()
+    public int Id { get; set; }
+    public int ProductId { get; set; }
+    public string Author { get; set; } = string.Empty;
+    public short Rating { get; set; }
+    public string? Content { get; set; }
+    public DateTime CreatedAt { get; set; }
+    public Product Product { get; set; } = null!;
+}
+
+public class Summary
+{
+    public int Id { get; set; }
+    public int ProductId { get; set; }
+    public string Content { get; set; } = string.Empty;
+    public DateTime GeneratedAt { get; set; }
+    public DateTime ExpiresAt { get; set; }
+    public Product Product { get; set; } = null!;
+}
+
+// ── DbContext ──────────────────────────────────────────────────────────────────
+
+public class ReviewSummarizerDbContext(DbContextOptions<ReviewSummarizerDbContext> options) : DbContext(options)
+{
+    public DbSet<Product> Products => Set<Product>();
+    public DbSet<Review> Reviews => Set<Review>();
+    public DbSet<Summary> Summaries => Set<Summary>();
+
+    protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
-        if (string.IsNullOrWhiteSpace(connectionString))
+        modelBuilder.Entity<Product>().ToTable("products");
+
+        modelBuilder.Entity<Review>(e =>
         {
-            throw new InvalidOperationException("ConnectionStrings:DefaultConnection is not set.");
-        }
+            e.ToTable("reviews");
+            e.HasOne(r => r.Product)
+             .WithMany(p => p.Reviews)
+             .HasForeignKey(r => r.ProductId)
+             .OnDelete(DeleteBehavior.Restrict);
+        });
 
-        var normalizedConnectionString = NormalizeConnectionString(connectionString);
-        var connection = new MySqlConnection(normalizedConnectionString);
-        await connection.OpenAsync();
-        return connection;
-    }
-
-    private static string NormalizeConnectionString(string rawConnectionString)
-    {
-        if (!Uri.TryCreate(rawConnectionString, UriKind.Absolute, out var uri) ||
-            !string.Equals(uri.Scheme, "mysql", StringComparison.OrdinalIgnoreCase))
+        modelBuilder.Entity<Summary>(e =>
         {
-            return rawConnectionString;
-        }
-
-        var database = uri.AbsolutePath.Trim('/');
-        if (string.IsNullOrWhiteSpace(database))
-        {
-            throw new InvalidOperationException("MySQL URL must include a database name in the path.");
-        }
-
-        var builder = new MySqlConnectionStringBuilder
-        {
-            Server = uri.Host,
-            Port = (uint)(uri.IsDefaultPort ? 3306 : uri.Port),
-            Database = database,
-            UserID = Uri.UnescapeDataString(uri.UserInfo.Split(':')[0]),
-        };
-
-        var userInfoParts = uri.UserInfo.Split(':', 2);
-        if (userInfoParts.Length == 2)
-        {
-            builder.Password = Uri.UnescapeDataString(userInfoParts[1]);
-        }
-
-        return builder.ConnectionString;
+            e.ToTable("summaries");
+            e.HasIndex(s => s.ProductId).IsUnique();
+            e.HasOne(s => s.Product)
+             .WithOne(p => p.Summary)
+             .HasForeignKey<Summary>(s => s.ProductId)
+             .OnDelete(DeleteBehavior.Restrict);
+        });
     }
 }
+
+// ── Response DTO ───────────────────────────────────────────────────────────────
 
 public sealed class ReviewDto
 {
     public int Id { get; init; }
     public string Author { get; init; } = string.Empty;
     public string Content { get; init; } = string.Empty;
-    public long Rating { get; init; }
+    public short Rating { get; init; }
     public DateTime CreatedAt { get; init; }
-}
-
-public sealed class SummaryRow
-{
-    public string Content { get; init; } = string.Empty;
-    public DateTime ExpiresAt { get; init; }
 }
