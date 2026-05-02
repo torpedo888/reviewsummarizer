@@ -17,10 +17,11 @@ export type SummaryApiResponse = {
 };
 
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL?.trim();
+const normalizedApiBaseUrl = apiBaseUrl?.replace(/\/+$/, '');
 
 const apiClient = axios.create({
   // In local dev, leave this undefined and use Vite proxy for /api.
-  baseURL: apiBaseUrl || undefined,
+  baseURL: normalizedApiBaseUrl || undefined,
 });
 
 const reviewsApi = {
