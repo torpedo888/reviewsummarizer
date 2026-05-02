@@ -218,16 +218,38 @@ static async Task<string> GetSummaryAsync(
     }
 
     using var document = JsonDocument.Parse(body);
-    if (document.RootElement.TryGetProperty("output_text", out var outputTextElement))
+    var root = document.RootElement;
+
+    // Responses API: top-level output_text shorthand
+    if (root.TryGetProperty("output_text", out var outputTextElement))
     {
         var outputText = outputTextElement.GetString();
         if (!string.IsNullOrWhiteSpace(outputText))
-        {
             return outputText;
+    }
+
+    // Responses API: output[].content[].text (standard shape)
+    if (root.TryGetProperty("output", out var outputArray))
+    {
+        foreach (var outputItem in outputArray.EnumerateArray())
+        {
+            if (outputItem.TryGetProperty("content", out var contentArray))
+            {
+                foreach (var contentItem in contentArray.EnumerateArray())
+                {
+                    if (contentItem.TryGetProperty("text", out var textElement))
+                    {
+                        var text = textElement.GetString();
+                        if (!string.IsNullOrWhiteSpace(text))
+                            return text;
+                    }
+                }
+            }
         }
     }
 
-    throw new InvalidOperationException("OpenAI did not return output_text.");
+    logger.LogWarning("Unexpected OpenAI response shape: {Body}", body);
+    throw new InvalidOperationException("OpenAI did not return a text response.");
 }
 
 // ── Entity models ─────────────────────────────────────────────────────────────
