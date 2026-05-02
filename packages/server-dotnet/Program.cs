@@ -145,7 +145,16 @@ app.MapGet("/api/products/{id:int}/reviews/summarize", async (
         "Summarize the following reviews into a short paragraph highlighting key positive and negative points:\n" +
         joinedReviews;
 
-    var summaryText = await GetSummaryAsync(prompt, httpClientFactory, logger, app.Configuration);
+    string summaryText;
+    try
+    {
+        summaryText = await GetSummaryAsync(prompt, httpClientFactory, logger, app.Configuration);
+    }
+    catch (Exception ex)
+    {
+        logger.LogError(ex, "Failed to generate summary for product {ProductId}", id);
+        return Results.Problem(detail: ex.Message, statusCode: 500);
+    }
     var fullSummary = $"Summary of reviews for product {id}: {summaryText}";
 
     var now = DateTime.UtcNow;
