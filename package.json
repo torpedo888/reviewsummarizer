@@ -1,10 +1,10 @@
 {
   "name": "expresstest",
-  "module": "index.ts",
   "type": "module",
   "private": true,
   "scripts": {
     "dev": "bun run index.ts",
+    "start": "dotnet run --project packages/server-dotnet",
     "format": "prettier --write .",
     "prepare": "husky"
   },

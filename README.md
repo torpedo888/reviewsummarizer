@@ -51,7 +51,6 @@ This will start the .NET API server and client concurrently.
 reviewsummarizer/
 ├── packages/
 │   ├── client/   # React + Vite frontend
-│   ├── server/   # Legacy Express backend
 │   └── server-dotnet/ # Active .NET minimal API backend
 ├── package.json  # Bun workspace config
 └── ...
